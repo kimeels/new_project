@@ -1,10 +1,6 @@
 import tensorflow as tf
 import numpy as np 
-import pylab as pl 
-import seaborn as sns
 import os
-import pandas as pd
-from sklearn.model_selection import train_test_split
 import pickle
 
 def make_model(final_layer = 6):
@@ -99,14 +95,15 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
 
     """
 
-    dirname = "paper1_hassan/"
-    checkpoint_path = dirname+"cp-{epoch:04d}.ckpt"
+    # checkpoint_path = dirname+"cp-{epoch:04d}.ckpt"
+    checkpoint_path = os.path.join(dirname, 'cp.ckpt')
     checkpoint_dir = os.path.dirname(checkpoint_path)
 
 
     # Create a callback that saves the model's weights
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=save_weights_only,
+                                                     save_best_only=True,
                                                      verbose=verbose)
 
     if gpu:
