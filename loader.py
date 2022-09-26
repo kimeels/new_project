@@ -159,13 +159,17 @@ class Data:
                               dtype=np.float32).reshape((ns, *self.dim))
                 _y = np.array([hf[group].attrs[param_key]
                                for param_key in self.param_keys],
-                              dtype=np.float32)
+                              dtype=np.float32).reshape((1, self.n_params))
                 # These groups share output params
                 _y = np.tile(_y, ns).reshape((ns, self.n_params))
 
                 # Store
                 x[i0:i1, :, :, :] = _x
                 y[i0:i1, :] = _y
+
+        # Normalise parameters
+        for i in range(self.n_params):
+            y[:, i] = (y[:, i] - self.norms['mu'][i]) / self.norms['sig'][i]
 
         if shuffle:
             shuffle_idxs = self.get_shuffle_idxs()[ds]
