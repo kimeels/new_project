@@ -43,7 +43,7 @@ if __name__ == '__main__':
         print_level('testing',
                     1,
                     d.verbose)
-        model.load_weights(os.path.join(d.out_dir, 'cp-best.ckpt'))
+        model.load_weights(os.path.join(d.out_dir, 'cp.ckpt'))
 
         x_test, y_test = d.load_data('test')
         
