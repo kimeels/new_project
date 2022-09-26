@@ -57,6 +57,8 @@ if __name__ == '__main__':
             y_test[:, i] = (y_test[:, i] *
                             d.norms['sig'][i]) + d.norms['mu'][i]
 
-        # TODO improve this saving
-        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'), y_test)
-        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'), y_pred)
+        header = d.param_keys[0]
+        for i in range(1, d.n_params):
+            header += ' ' + d.param_keys[i]
+        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'), y_test, header=header)
+        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'), y_pred, header=header)
