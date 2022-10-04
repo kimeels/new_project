@@ -393,12 +393,12 @@ for iz, z in enumerate(zs):
 
             # Just use sequential index as group
             g = hf.create_group(f'{gidx:05d}')
-            d = g.create_dataset('train', data=data[idxs[0:ntr],
+            d = g.create_dataset('train', data=slcs[idxs[0:ntr],
                                                     :, :,])
-            d = g.create_dataset('valid', data=data[idxs[ntr:ntr+nva],
+            d = g.create_dataset('valid', data=slcs[idxs[ntr:ntr+nva],
                                                     :, :])
                                                     
-            d = g.create_dataset('test', data=data[idxs[ntr+nva:ntr+nva+nte],
+            d = g.create_dataset('test', data=slcs[idxs[ntr+nva:ntr+nva+nte],
                                                    :, :,])
                                                    
             for k, v in params.items():
