@@ -1,7 +1,7 @@
 import os
 import sys
 import numpy as np
-from loader import Data
+from loader import Data, DataGenerator
 from util import print_level
 from training_functions import make_model, train_network
 
@@ -25,9 +25,24 @@ if __name__ == '__main__':
         print_level('training',
                     1,
                     d.verbose)
-        
-        x_train, y_train = d.load_data('train', shuffle=True)
-        x_valid, y_valid = d.load_data('valid', shuffle=True)
+
+        if d.generator:
+            print_level('using a data generator',
+                        2,
+                        d.verbose)
+ 
+            x_train = DataGenerator(d, 'train')
+            y_train = None
+            x_valid = DataGenerator(d, 'valid')
+            y_valid = None
+
+        else:
+            print_level('loading all the data',
+                        2,
+                        d.verbose)
+
+            x_train, y_train = d.load_data('train', shuffle=True)
+            x_valid, y_valid = d.load_data('valid', shuffle=True)
         
         train_network(model,
                       x_train=x_train,
@@ -60,5 +75,9 @@ if __name__ == '__main__':
         header = d.param_keys[0]
         for i in range(1, d.n_params):
             header += ' ' + d.param_keys[i]
-        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'), y_test, header=header)
-        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'), y_pred, header=header)
+        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'),
+                   y_test,
+                   header=header)
+        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'),
+                   y_pred,
+                   header=header)

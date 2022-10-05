@@ -4,10 +4,11 @@ param_keys:                  # keys of parameters to train on
 - fesc
 - sigma8
 batch_size: 128              # batch size	
-epochs: 100	             # number of epochs to train for
+epochs: 100                  # number of epochs to train for
 data_path: ./deltaTb_slc.h5  # path to input HDF5 file
 out_dir: ./results/          # directory to store results
 mode: train                  # network mode: train, test or both
 verbose: True                # print information
+generator: False             # load data on-demand
 max_n_slice: -1              # maximum number of slices to take (-1 unlimited)
 max_n_box: -1                # maximum number of boxes to sample (-1 unlimited)

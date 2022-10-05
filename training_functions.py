@@ -106,17 +106,23 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
                                                      save_best_only=True,
                                                      verbose=verbose)
 
+    # If we use a generator then y_val is not specified
+    if y_val is None:
+        val = x_val
+    else:
+        val = (x_val, y_val)
+        
     if gpu:
         with tf.device('/device:GPU:0'):
             history = model.fit(x_train, y_train,
-                                validation_data = (x_val,y_val),
-                                  batch_size=batch_size,
-                                  epochs=epochs,
-                                  verbose=verbose,
-                                  callbacks=[cp_callback])
+                                validation_data=val,
+                                batch_size=batch_size,
+                                epochs=epochs,
+                                verbose=verbose,
+                                callbacks=[cp_callback])
     else:
         history = model.fit(x_train, y_train,
-                            validation_data = (x_val,y_val),
+                            validation_data=val,
                             batch_size=batch_size,
                             epochs=epochs,
                             verbose=verbose,
