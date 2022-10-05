@@ -11,4 +11,4 @@ slc_idxs:      # which dimensions to take slices from (list)
 - 2
 nslc_dim: 40   # number of slices per dimension
 data_path: ./   # directory containing ?????/ simulation directories
-out_path: deltaTb_slc/  # output directoru
+out_path: deltaTb_slc/  # output directory
