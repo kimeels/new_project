@@ -1,0 +1,14 @@
+nx: 200        # number of simulation elements per dimension
+L: 150         # box size in Mpc
+nbox: 25       # number of boxes to sample from xHI histogram
+nbin: 10       # number of bins to use in xHI histogram
+tr_frac: 0.8   # training fraction
+va_frac: 0.1   # validation fraction
+te_frac: 0.1   # testing fraction
+slc_idxs:      # which dimensions to take slices from (list)
+- 0
+- 1
+- 2
+nslc_dim: 40   # number of slices per dimension
+data_path: ./   # directory containing ?????/ simulation directories
+out_path: deltaTb_slc/  # output directoru
