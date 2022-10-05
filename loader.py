@@ -12,6 +12,26 @@ class Data:
         self.get_data_info()
         self.compute_param_norms()
 
+        # If we have an upper limit on the number of boxes then this
+        # sets our number of groups to use later (still use all the
+        # groups to normalise the parameters)
+        # n_groups = self.n_groups
+        # groups = self.groups
+        # self.n_groups = {ds: n_groups for ds in self.datasets}
+        # self.groups = {ds: groups for ds in self.datasets}
+        
+        if self.max_n_box > 0:
+            # Randomly shuffle all of the old boxes
+            gidxs = np.random.choice(self.n_groups['train'],
+                                     self.max_n_box,
+                                     replace=False)
+            assert(self.max_n_box == gidxs.shape[0]), 'More samples than allowed'
+            self.n_groups['train'] = self.max_n_box
+            self.n_groups['valid'] = self.max_n_box
+            # Sample the new n_groups number of boxes from the shuffled data
+            self.groups['train'] = self.groups['test'][gidxs]
+            self.groups['valid'] = self.groups['test'][gidxs]
+
 
     def load_config(self):
         """Loads the YAML config file stored at config_path and stores
@@ -25,7 +45,11 @@ class Data:
             self.verbose = bool(self.config['verbose'])
             self.out_dir = self.config['out_dir']
             self.param_keys = self.config['param_keys']
+            self.max_n_slice = int(self.config['max_n_slice'])
+            self.max_n_box = int(self.config['max_n_box'])
 
+            assert ((self.max_n_slice < 0) or (self.max_n_box < 0)), 'Cannot use max_n_slice and max_n_box together'
+            
             assert(self.config['mode'] in ['test', 'train', 'both'])
 
             # Set variables which dictate how the network runs
@@ -49,35 +73,55 @@ class Data:
                         2,
                         self.verbose)
             
+            if self.max_n_box > 0:
+                print_level(f'using a maximum of {self.max_n_box:d} boxes',
+                            2,
+                            self.verbose)
+            elif self.max_n_slice > 0:
+                print_level(f'using a maximum of {self.max_n_slice:d} boxes',
+                            2,
+                            self.verbose)
+            else:
+                print_level(f'using all available training data',
+                            2,
+                            self.verbose)
 
-            
     def get_data_info(self):
         """Reads the properties of the HDF5 data file
         
         """
         self.n_params = len(self.param_keys)
-
+        self.groups = {}
+        self.n_groups = {}
+        self.n_slices = {}
+        self.dim = {}
         with h5py.File(self.config['data_path'], 'r') as hf:
-            groups = list(hf.keys())  # all groups
-            g0 = groups[0]
-            self.n_groups = len(groups)
-            self.n_slices = {ds: hf[g0+'/'+ds].shape[0]
-                             for ds in self.datasets }  # per group
-            self.dim = (hf[g0+'/'+self.datasets[0]].shape[1],
-                        hf[g0+'/'+self.datasets[0]].shape[2],
-                        1)  # dimensions of a single input image 
+            for ds in self.datasets:
+                # For each dataset, we keep only the groups that
+                # contain that dataset
+                self.groups[ds] = np.array([group for group in hf.keys() if
+                                            group+'/'+ds in hf])
+                self.n_groups[ds] = len(self.groups[ds])
+                g0 = self.groups[ds][0]
+                self.n_slices[ds] = hf[g0+'/'+ds].shape[0]  # per group
+                self.dim[ds] = (hf[g0+'/'+ds].shape[1],
+                                hf[g0+'/'+ds].shape[2],
+                                1)  # dimensions of a single input image
 
+            # FIXME put a better assert here, also should probably
+            # check other properties are consistent (though something
+            # will have gone badly wrong in preprocessing if not)
+            # assert(all([d == self.dim[self.datasets[0]] for d in self.dim]))
+            self.dim = self.dim[self.datasets[0]]
+            
         print_level(f'read HDF5 file {self.config["data_path"]:s}',
                     1,
                     self.verbose)
         print_level(f'using {self.n_params:d} params',
                     2,
                     self.verbose)
-        print_level(f'have {self.n_groups:d} groups, where group each has:',
-                    2,
-                    self.verbose)
         for ds in self.datasets:
-            print_level(f'{self.n_slices[ds]:d} {ds} slices',
+            print_level(f'{ds:s} has {self.n_groups[ds]:d} groups, where group each has {self.n_slices[ds]:d} {ds} slices',
                         3,
                         self.verbose)
         print_level(f'and each slice has dimension {self.dim}',
@@ -87,22 +131,42 @@ class Data:
             
     def compute_param_norms(self):
         """Computes the mean and standard deviation of each of the
-        parameters, for use in normalisation
+        parameters, for use in normalisation. This is done over /all/
+        datasets.
 
         """
-        params = np.zeros((self.n_groups, self.n_params),
+        print_level('computing parameter normalisations',
+                    2,
+                    self.verbose)
+
+        n_groups_tot = sum(self.n_groups.values())
+        params = np.zeros((n_groups_tot, self.n_params),
                           dtype=np.float32)
 
         with h5py.File(self.config['data_path'], 'r') as hf:
+            # Just iterate over all the groups, we don't care which
+            # dataset they are assigned to
             for i, group in enumerate(hf.keys()):
                 for j, param_key in enumerate(self.param_keys):
                     params[i, j] = hf[group].attrs[param_key]
 
-        self.norms = {'mu': np.mean(params, axis=1),
-                      'sig': np.std(params, axis=1)}
+        mu = np.zeros((1, self.n_params))
+        sig = np.zeros((1, self.n_params))
 
+        for i in range(self.n_params):
+            mu[0, i] = np.mean(params[:, i])
+            sig[0, i] = np.std(params[:, i])
+        
+        self.norms = {'mu': mu,
+                      'sig': sig}
 
-    def get_shuffle_idxs(self):
+        for i, param_key in enumerate(self.param_keys):
+            print_level(f'{param_key}: mu = {self.norms["mu"][0, i]:.4f} sig = {self.norms["sig"][0, i]:.4f}',
+                        3,
+                        self.verbose)
+
+            
+    def get_shuffle_idxs(self, ds):
         """Generates a set of random indexes to shuffle the training
         and validation data, but only does this once. Also generates
         indices for shuffling the test data, but these won't be used.
@@ -112,14 +176,15 @@ class Data:
         if hasattr(self, shuffle_attr):
             shuffle_idxs = getattr(self, shuffle_attr)
         else:
-            shuffle_idxs = {ds:
-                            np.random.choice(self.n_groups * self.n_slices[ds],
-                                             self.n_groups * self.n_slices[ds],
-                                             replace=False)
-                            for ds in self.datasets}
+            shuffle_idxs = {}
+            for _ds in self.datasets:
+                n_choice = self.n_groups[_ds] * self.n_slices[_ds]
+                shuffle_idxs[_ds] = np.random.choice(n_choice,
+                                                     n_choice,
+                                                     replace=False)
             setattr(self, shuffle_attr, shuffle_idxs)
 
-        return shuffle_idxs
+        return shuffle_idxs[ds]
 
 
     def load_data(self, ds, shuffle=False):
@@ -141,19 +206,20 @@ class Data:
                     1,
                     self.verbose)
         
-        ns = self.n_slices[ds]   # number of slices per group
-        nt = ns * self.n_groups  # total number of slices
+        ns = self.n_slices[ds]       # number of slices per group
+        nt = ns * self.n_groups[ds]  # total number of slices used in this ds
+        # print(nt, ns)
         x = np.zeros((nt, *self.dim), dtype=np.float32)      # input
         y = np.zeros((nt, self.n_params), dtype=np.float32)  # output
 
         with h5py.File(self.config['data_path'], 'r') as hf:
-            groups = list(hf.keys())
-
-            for i, group in enumerate(groups):
+            # Iterate over all the groups being used for this ds
+            for i, group in enumerate(self.groups[ds]):
                 # Positions in the main output array
                 i0 = i * ns
                 i1 = (i + 1) * ns
-
+                # print(i0, i1)
+                
                 # Temporaray work arrays
                 _x = np.array(hf[group+'/'+ds],
                               dtype=np.float32).reshape((ns, *self.dim))
@@ -168,12 +234,22 @@ class Data:
                 y[i0:i1, :] = _y
 
         # Normalise parameters
+        print_level('normalising parameters',
+                    2,
+                    self.verbose)
+        
         for i in range(self.n_params):
-            y[:, i] = (y[:, i] - self.norms['mu'][i]) / self.norms['sig'][i]
+            y[:, i] = (y[:, i] -
+                       self.norms['mu'][0, i]) / self.norms['sig'][0, i]
+            print_level(f'{self.param_keys[i]}: min = {y[:, i].min():.4f} max = {y[:, i].max():.4f} mean = {np.mean(y[:, i]):.4f}',
+                        3,
+                        self.verbose)
 
         if shuffle:
-            shuffle_idxs = self.get_shuffle_idxs()[ds]
+            shuffle_idxs = self.get_shuffle_idxs(ds)
             x = x[shuffle_idxs, :, :, :]
             y = y[shuffle_idxs, :]
             
-        return x, y        
+        return x, y    
+
+    
