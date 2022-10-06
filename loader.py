@@ -3,6 +3,8 @@ import yaml
 import numpy as np
 import tensorflow as tf
 from util import print_level
+from keras.utils import Sequence
+import matplotlib.pyplot as plt
 
 class Data:
     def __init__(self, config_path):
@@ -47,6 +49,7 @@ class Data:
             self.param_keys = self.config['param_keys']
             self.max_n_slice = int(self.config['max_n_slice'])
             self.max_n_box = int(self.config['max_n_box'])
+            self.generator = bool(self.config['generator'])
 
             assert ((self.max_n_slice < 0) or (self.max_n_box < 0)), 'Cannot use max_n_slice and max_n_box together'
             
@@ -237,19 +240,129 @@ class Data:
         print_level('normalising parameters',
                     2,
                     self.verbose)
-        
-        for i in range(self.n_params):
-            y[:, i] = (y[:, i] -
-                       self.norms['mu'][0, i]) / self.norms['sig'][0, i]
-            print_level(f'{self.param_keys[i]}: min = {y[:, i].min():.4f} max = {y[:, i].max():.4f} mean = {np.mean(y[:, i]):.4f}',
-                        3,
-                        self.verbose)
+        y = self.normalise_parameters(y)
+        print_level(f'{self.param_keys[i]}: min = {y[:, i].min():.4f} max = {y[:, i].max():.4f} mean = {np.mean(y[:, i]):.4f}',
+                    3,
+                    self.verbose)
 
         if shuffle:
             shuffle_idxs = self.get_shuffle_idxs(ds)
             x = x[shuffle_idxs, :, :, :]
             y = y[shuffle_idxs, :]
-            
-        return x, y    
 
-    
+        return x, y
+
+    def normalise_parameters(self, y):
+        """Normalise the output parameter array y, using the precomputed mean and standard deviation as y_norm = (y - mu) / sig
+
+        Parameters
+        ----------
+        y : arr
+            Output parameters
+
+        Examples
+        --------
+        y = self.normalise_parameters(y)
+
+        """
+        for i in range(self.n_params):
+            y[:, i] = (y[:, i] -
+                       self.norms['mu'][0, i]) / self.norms['sig'][0, i]
+
+        return y
+
+
+class DataGenerator(Sequence):
+    """Based on
+    https://stanford.edu/~shervine/blog/keras-how-to-generate-data-on-the-fly"""
+
+    def __init__(self, D, ds, shuffle=True):
+        """A DataGenerator to provided batched data on-demand to a network
+
+        Parameters
+        ----------
+        D : Data
+            Instance of the Data class, which contains information
+            about the data and network parameters
+        ds : str
+            Which dataset to load out of 'train', 'valid' and 'test'
+        shuffle : bool
+            Whether to shuffle the data between epochs, default is
+            True
+
+        Examples
+        --------
+        d = Data(config_path)
+        x_train = DataGenerator(d, 'train')
+        y_train = None
+        x_valid = DataGenerator(d, 'valid')
+        y_valid = None
+
+        train_network(model, x_train=x_train, ...)
+
+        """
+        self.D = D
+        self.ds = ds
+        self.shuffle = shuffle
+        self.gen_idxs()
+        self.on_epoch_end()
+
+    def __len__(self):
+        """Returns the number of batches per epoch
+
+        """
+        return int(self.n_slices_tot // self.D.batch_size)
+
+    def __getitem__(self, i):
+        i0 = i * self.D.batch_size
+        i1 = (i + 1) * self.D.batch_size
+        idxs_batch = self.idxs[i0:i1, :]
+
+        x, y = self.load_data(idxs_batch)
+
+        return x, y
+
+    def gen_idxs(self):
+        """Generates a 2D array of indexes containing the group and
+        position of every slice
+
+        """
+        self.n_slices_tot = self.D.n_slices[self.ds] * self.D.n_groups[self.ds]
+        self.idxs = np.zeros(shape=(self.n_slices_tot, 2), dtype=int)  # int32 to save space?
+        slice_idxs = np.arange(0, self.D.n_slices[self.ds], dtype=int)
+
+        for i, g in enumerate(self.D.groups[self.ds]):
+            i0 = i * self.D.n_slices[self.ds]  
+            i1 = (i + 1) * self.D.n_slices[self.ds]
+
+            self.idxs[i0:i1, 0] = int(g)      # group index
+            self.idxs[i0:i1, 1] = slice_idxs  # slice index
+
+    def load_data(self, idxs_batch):
+        d = '{0:05d}/'
+        x = np.zeros((self.D.batch_size, *self.D.dim),
+                     dtype=np.float32)
+        y = np.zeros((self.D.batch_size, self.D.n_params),
+                     dtype=np.float32)
+
+        with h5py.File(self.D.config['data_path'], 'r') as hf:
+            # Iterate over the group and slice in the idxs for this batch
+            for i, (g, s) in enumerate(zip(idxs_batch[:, 0],
+                                           idxs_batch[:, 1])):
+                x[i, :, :, 0] = np.array(hf[d.format(g)+self.ds])[s, :, :]
+                y[i, :] = np.array([hf[d.format(g)].attrs[param_key]
+                                    for param_key
+                                    in self.D.param_keys],
+                                   dtype=np.float32).reshape((1, self.D.n_params))
+
+        # Normalise parameters
+        y = self.D.normalise_parameters(y)
+
+        return x, y
+
+    def on_epoch_end(self):
+        """Shuffle the slices at the end of each epoch
+
+        """
+        if self.shuffle:
+            np.random.shuffle(self.idxs)

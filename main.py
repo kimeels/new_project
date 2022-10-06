@@ -1,7 +1,7 @@
 import os
 import sys
 import numpy as np
-from loader import Data
+from loader import Data, DataGenerator
 from util import print_level
 from training_functions import make_model, train_network
 
@@ -27,21 +27,36 @@ if __name__ == '__main__':
         print_level('training',
                     1,
                     d.verbose)
-        
-        x_train, y_train = d.load_data('train', shuffle=True)
-        x_valid, y_valid = d.load_data('valid', shuffle=True)
 
-        if d.max_n_slice > 0:
-            s = x_train.shape[0]
-            # Calculate ratio of sizes to determine how many slices to take to keep ratieos -- same for test
-            i1_train = d.max_n_slice
-            i1_valid = int(d.max_n_slice * x_valid.shape[0] / s)
-            x_train = x_train[0:i1_train]
-            y_train = y_train[0:i1_train]
-            x_valid = x_valid[0:i1_valid]
-            y_valid = y_valid[0:i1_valid]
+        if d.generator:
+            print_level('using a data generator',
+                        2,
+                        d.verbose)
+ 
+            x_train = DataGenerator(d, 'train')
+            y_train = None
+            x_valid = DataGenerator(d, 'valid')
+            y_valid = None
 
-            
+        else:
+            print_level('loading all the data',
+                        2,
+                        d.verbose)
+
+            x_train, y_train = d.load_data('train', shuffle=True)
+            x_valid, y_valid = d.load_data('valid', shuffle=True)
+
+            if d.max_n_slice > 0:
+                s = x_train.shape[0]
+                # Calculate ratio of sizes to determine how many
+                # slices to take to keep ratieos -- same for test
+                i1_train = d.max_n_slice
+                i1_valid = int(d.max_n_slice * x_valid.shape[0] / s)
+                x_train = x_train[0:i1_train]
+                y_train = y_train[0:i1_train]
+                x_valid = x_valid[0:i1_valid]
+                y_valid = y_valid[0:i1_valid]
+                
         train_network(model,
                       x_train=x_train,
                       y_train=y_train,
@@ -78,5 +93,9 @@ if __name__ == '__main__':
         header = d.param_keys[0]
         for i in range(1, d.n_params):
             header += ' ' + d.param_keys[i]
-        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'), y_test, header=header)
-        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'), y_pred, header=header)
+        np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'),
+                   y_test,
+                   header=header)
+        np.savetxt(os.path.join(d.out_dir, 'out_pred.txt'),
+                   y_pred,
+                   header=header)
