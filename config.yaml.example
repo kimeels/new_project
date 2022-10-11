@@ -10,5 +10,6 @@ out_dir: ./results/          # directory to store results
 mode: train                  # network mode: train, test or both
 verbose: True                # print information
 generator: False             # load data on-demand
+load_norms: False            # load parameter norms instead of calculating
 max_n_slice: -1              # maximum number of slices to take (-1 unlimited)
 max_n_box: -1                # maximum number of boxes to sample (-1 unlimited)

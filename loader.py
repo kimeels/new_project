@@ -1,14 +1,13 @@
+import os
 import h5py
 import yaml
 import numpy as np
 import tensorflow as tf
-from util import print_level
+from util import print_level, gen_header, parse_param_keys
 from keras.utils import Sequence
-import matplotlib.pyplot as plt
 
 class Data:
     def __init__(self, config_path):
-        self.datasets = ['train', 'valid', 'test']
         self.config_path = config_path
         self.load_config()
         self.get_data_info()
@@ -31,8 +30,8 @@ class Data:
             self.n_groups['train'] = self.max_n_box
             self.n_groups['valid'] = self.max_n_box
             # Sample the new n_groups number of boxes from the shuffled data
-            self.groups['train'] = self.groups['test'][gidxs]
-            self.groups['valid'] = self.groups['test'][gidxs]
+            self.groups['train'] = self.groups['train'][gidxs]
+            self.groups['valid'] = self.groups['valid'][gidxs]
 
 
     def load_config(self):
@@ -50,6 +49,7 @@ class Data:
             self.max_n_slice = int(self.config['max_n_slice'])
             self.max_n_box = int(self.config['max_n_box'])
             self.generator = bool(self.config['generator'])
+            self.load_norms = bool(self.config['load_norms'])
 
             assert ((self.max_n_slice < 0) or (self.max_n_box < 0)), 'Cannot use max_n_slice and max_n_box together'
             
@@ -58,11 +58,17 @@ class Data:
             # Set variables which dictate how the network runs
             self.train = True
             self.test = True
+            self.datasets = ['train', 'valid', 'test']
             if self.config['mode'] == 'train':
                 self.test = False
+                self.datasets = ['train', 'valid']
             if self.config['mode'] == 'test':
                 self.train = False
-            
+                self.datasets = ['test']
+
+            # Make the output directory
+            os.makedirs(self.out_dir, exist_ok=True)
+                
             print_level(f'read config file {self.config_path:s}',
                         1,
                         self.verbose)
@@ -111,11 +117,16 @@ class Data:
                                 hf[g0+'/'+ds].shape[2],
                                 1)  # dimensions of a single input image
 
-            # FIXME put a better assert here, also should probably
-            # check other properties are consistent (though something
-            # will have gone badly wrong in preprocessing if not)
-            # assert(all([d == self.dim[self.datasets[0]] for d in self.dim]))
-            self.dim = self.dim[self.datasets[0]]
+                # FIXME put a better assert here, also should probably
+                # check other properties are consistent (though
+                # something will have gone badly wrong in
+                # preprocessing if not) assert(all([d ==
+                # self.dim[self.datasets[0]] for d in self.dim]))
+                
+        # All dims should be the same, so we don't need to store
+        # individual ones
+        self.dim = self.dim[self.datasets[0]]
+
             
         print_level(f'read HDF5 file {self.config["data_path"]:s}',
                     1,
@@ -138,36 +149,70 @@ class Data:
         datasets.
 
         """
-        print_level('computing parameter normalisations',
-                    2,
-                    self.verbose)
 
-        n_groups_tot = sum(self.n_groups.values())
-        params = np.zeros((n_groups_tot, self.n_params),
-                          dtype=np.float32)
+        if self.load_norms:
+            print_level('loading parameter normalisations',
+                        2,
+                        self.verbose)
+            mu_path = os.path.join(self.out_dir, 'mu.txt')
+            sig_path = os.path.join(self.out_dir, 'sig.txt')
+            mu_keys = parse_param_keys(mu_path)
+            sig_keys = parse_param_keys(sig_path)
 
-        with h5py.File(self.config['data_path'], 'r') as hf:
-            # Just iterate over all the groups, we don't care which
-            # dataset they are assigned to
-            for i, group in enumerate(hf.keys()):
-                for j, param_key in enumerate(self.param_keys):
-                    params[i, j] = hf[group].attrs[param_key]
+            # Check the param_keys are in the right order
+            mu_c = [[x == y for x in mu_keys] for y in self.param_keys]
+            sig_c = [[x == y for x in sig_keys] for y in self.param_keys]
+            for i, (imu_c, isig_c) in enumerate(zip(mu_c, sig_c)):
+                assert(imu_c[i]), 'param_keys for mu not conistent with self.param_keys'
+                assert(isig_c[i]), 'param_keys for sig not conistent with self.param_keys'
+            # TODO could we index the numpy arrays with mu_c and sig_c?
 
-        mu = np.zeros((1, self.n_params))
-        sig = np.zeros((1, self.n_params))
+            # Have to do this ugly massaging to handle the case of one
+            # parameter as well as multiple parameters ... but at least
+            # it puts mu and sig directly in the correct shape
+            mu = np.array(np.loadtxt(mu_path)).reshape((1, self.n_params))
+            sig = np.array(np.loadtxt(sig_path)).reshape((1, self.n_params))
 
-        for i in range(self.n_params):
-            mu[0, i] = np.mean(params[:, i])
-            sig[0, i] = np.std(params[:, i])
+            self.norms = {'mu': mu,
+                          'sig': sig}
+                
+        else:
+            print_level('computing parameter normalisations',
+                        2,
+                        self.verbose)
+            
+            mu = np.zeros((1, self.n_params))
+            sig = np.zeros((1, self.n_params))
+
+            n_groups_tot = sum(self.n_groups.values())
+            params = np.zeros((n_groups_tot, self.n_params),
+                              dtype=np.float32)
+
+            with h5py.File(self.config['data_path'], 'r') as hf:
+                # Just iterate over all the groups, we don't care which
+                # dataset they are assigned to
+                for i, group in enumerate(hf.keys()):
+                    for j, param_key in enumerate(self.param_keys):
+                        params[i, j] = hf[group].attrs[param_key]
+
+            for i in range(self.n_params):
+                mu[0, i] = np.mean(params[:, i])
+                sig[0, i] = np.std(params[:, i])
         
-        self.norms = {'mu': mu,
-                      'sig': sig}
+            self.norms = {'mu': mu,
+                          'sig': sig}
+                    
+            header = gen_header(self)
+            for k, v in self.norms.items():
+                np.savetxt(os.path.join(self.out_dir, k+'.txt'),
+                           v,
+                           header=header)
 
         for i, param_key in enumerate(self.param_keys):
             print_level(f'{param_key}: mu = {self.norms["mu"][0, i]:.4f} sig = {self.norms["sig"][0, i]:.4f}',
                         3,
                         self.verbose)
-
+        
             
     def get_shuffle_idxs(self, ds):
         """Generates a set of random indexes to shuffle the training
@@ -241,9 +286,10 @@ class Data:
                     2,
                     self.verbose)
         y = self.normalise_parameters(y)
-        print_level(f'{self.param_keys[i]}: min = {y[:, i].min():.4f} max = {y[:, i].max():.4f} mean = {np.mean(y[:, i]):.4f}',
-                    3,
-                    self.verbose)
+        for i in range(self.n_params):
+            print_level(f'{self.param_keys[i]}: min = {y[:, i].min():.4f} max = {y[:, i].max():.4f} mean = {np.mean(y[:, i]):.4f}',
+                        3,
+                        self.verbose)
 
         if shuffle:
             shuffle_idxs = self.get_shuffle_idxs(ds)

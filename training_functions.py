@@ -119,7 +119,10 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
                                 batch_size=batch_size,
                                 epochs=epochs,
                                 verbose=verbose,
-                                callbacks=[cp_callback])
+                                callbacks=[cp_callback],
+                                max_queue_size=16,
+                                workers=8,
+                                use_multiprocessing=True)
     else:
         history = model.fit(x_train, y_train,
                             validation_data=val,

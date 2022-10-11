@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 from loader import Data, DataGenerator
-from util import print_level
+from util import print_level, gen_header
 from training_functions import make_model, train_network
 
 if __name__ == '__main__':
@@ -15,8 +15,6 @@ if __name__ == '__main__':
         config_path = sys.argv[1]
         
     d = Data(config_path)
-
-    os.makedirs(d.out_dir, exist_ok=True)
     
     print_level('making model',
                 1,
@@ -90,9 +88,7 @@ if __name__ == '__main__':
             y_test[:, i] = (y_test[:, i] *
                             d.norms['sig'][0, i]) + d.norms['mu'][0, i]
 
-        header = d.param_keys[0]
-        for i in range(1, d.n_params):
-            header += ' ' + d.param_keys[i]
+        header = gen_header(d)
         np.savetxt(os.path.join(d.out_dir, 'inp_pred.txt'),
                    y_test,
                    header=header)
