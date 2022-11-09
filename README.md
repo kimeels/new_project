@@ -84,7 +84,7 @@ network.yaml file, running is as easy as
 Data loading is handled by the `Data` class in loader.py, which also
 handles the normalisation of the output parameters, done as
 
-    y_i = (y_i - mu_i) - sig_i
+    y_i = (y_i - mu_i) / sig_i
 
 where `mu_i` and `sig_i` are the mean and standard deviation of the
 output parameter y_i. The network predictions are scaled back to their
