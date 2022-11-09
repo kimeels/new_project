@@ -98,13 +98,30 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
     # checkpoint_path = dirname+"cp-{epoch:04d}.ckpt"
     checkpoint_path = os.path.join(dirname, 'cp.ckpt')
     checkpoint_dir = os.path.dirname(checkpoint_path)
-
+    logger_path = os.path.join(dirname, 'training.log')
 
     # Create a callback that saves the model's weights
     cp_callback = tf.keras.callbacks.ModelCheckpoint(filepath=checkpoint_path,
                                                      save_weights_only=save_weights_only,
                                                      save_best_only=True,
                                                      verbose=verbose)
+
+    # LC add a few more callbacks
+    # Output training data after each epoch
+    lg_callback = tf.keras.callbacks.CSVLogger(logger_path)
+    # Reduce learning rate by factor every patience epoch without
+    # change in val_loss
+    rl_callback = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss',
+                                                       factor=0.1,
+                                                       patience=5,
+                                                       mode='min',
+                                                       min_delta=0.0,
+                                                       min_lr=1e-5)
+    # Stop training after patience epochs without improvement in val_loss
+    es_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss',
+                                                   patience=10,
+                                                   mode='min',
+                                                   min_delta=0.0)
 
     # If we use a generator then y_val is not specified
     if y_val is None:
@@ -119,10 +136,14 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
                                 batch_size=batch_size,
                                 epochs=epochs,
                                 verbose=verbose,
-                                callbacks=[cp_callback],
-                                max_queue_size=16,
-                                workers=8,
-                                use_multiprocessing=True)
+                                callbacks=[cp_callback,
+                                           lg_callback,
+                                           rl_callback,
+                                           es_callback])
+                            
+                                # max_queue_size=16,
+                                # workers=8,
+                                # use_multiprocessing=True)
     else:
         history = model.fit(x_train, y_train,
                             validation_data=val,
