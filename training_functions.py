@@ -3,6 +3,10 @@ import numpy as np
 import os
 import pickle
 
+import logging
+tf.get_logger().setLevel(logging.ERROR)
+
+
 def make_model(final_layer = 6):
     """
     Creates a network with the architecture specified in the paper. Final layer size is changable depending
@@ -57,11 +61,82 @@ def make_model(final_layer = 6):
 
     model.add(tf.keras.layers.Dense(final_layer,kernel_initializer=initializer,use_bias =False))
 
+
     model.compile(loss='mean_squared_error',
-              optimizer=tf.keras.optimizers.Adam(learning_rate = 0.01),
+              optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
               metrics=[tf.keras.metrics.RootMeanSquaredError()])
     return model
 
+
+def make_model_fine_tune(final_layer = 6, learning_rate=0.01, fine_tune=False, weights_path=None):
+    """
+    Creates a network with the architecture specified in the paper. Final layer size is changable depending
+    the number of parameters you want to infer.
+
+    Parameters:
+    -----------
+    final_layer : int
+        The number of neurons in the final layer. Depends on number of parameters to infer. Matches the shape training labels.
+
+    """
+    initializer = tf.keras.initializers.GlorotNormal()
+
+
+    model = tf.keras.Sequential()
+    model.add(tf.keras.layers.Conv2D(32, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.Conv2D(32, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+    model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+    model.add(tf.keras.layers.Conv2D(64, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.Conv2D(64, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+    model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+    model.add(tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+    model.add(tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
+
+    model.add(tf.keras.layers.Conv2D(256, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.Conv2D(256, kernel_size=(3, 3), strides=(1, 1),padding ='same',kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+
+    model.add(tf.keras.layers.Flatten())
+
+    model.add(tf.keras.layers.Dense(1024,kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+
+    model.add(tf.keras.layers.Dense(1024,kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+
+    model.add(tf.keras.layers.Dense(1024,kernel_initializer=initializer,use_bias =False))
+    model.add(tf.keras.layers.BatchNormalization(beta_initializer=initializer,momentum = 0.9))
+    model.add(tf.keras.layers.Activation('relu'))
+
+    model.add(tf.keras.layers.Dense(final_layer,kernel_initializer=initializer,use_bias =False))
+
+    if fine_tune:
+        model.load_weights(weights_path)   # for fine-tuning
+        # This should freeze and unfreeze all of the layers apart from
+        # BatchNormalization
+
+        # Only allow training on the final layer
+        for layer in model.layers[:-1]:
+            layer.trainable = False
+        
+
+    model.compile(loss='mean_squared_error',
+                  optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+                  metrics=[tf.keras.metrics.RootMeanSquaredError()])
+    return model
+    
 
 def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', batch_size = 128,epochs = 200,
                   save_weights_only = False,verbose = 1, gpu = True):
@@ -133,3 +208,7 @@ def train_network(model,x_train,y_train,x_val,y_val,dirname='training_root', bat
 
     pickle.dump(history.history['loss'], open( dirname+"loss.p", "wb" ) )
     pickle.dump(history.history['val_loss'], open( dirname+"val_loss.p", "wb" ) )
+
+
+# def fine_tune_network(model,x_train,y_train,x_val,y_val,dirname='training_root', batch_size = 128,epochs = 200,
+#                       save_weights_only = False,verbose = 1, gpu = True):
