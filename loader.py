@@ -183,22 +183,38 @@ class Data:
             
             mu = np.zeros((1, self.n_params))
             sig = np.zeros((1, self.n_params))
+            n = np.zeros((1, self.n_params))
 
             n_groups_tot = sum(self.n_groups.values())
-            params = np.zeros((n_groups_tot, self.n_params),
-                              dtype=np.float32)
+            # params = np.zeros((n_groups_tot, self.n_params),
+            #                   dtype=np.float32)
 
             with h5py.File(self.config['data_path'], 'r') as hf:
                 # Just iterate over all the groups, we don't care which
                 # dataset they are assigned to
                 for i, group in enumerate(hf.keys()):
                     for j, param_key in enumerate(self.param_keys):
-                        params[i, j] = hf[group].attrs[param_key]
+                        if 'slc' in param_key:
+                            print(hf[group+'/'+param_key])
+                            _p = np.array(hf[group+'/'+param_key],
+                                          dtype=np.float32)
+                            mu[0, j] += np.sum(_p)
+                            sig[0, j] += np.sum(_p ** 2.)
+                            n[0, j] += _p.size
 
-            for i in range(self.n_params):
-                mu[0, i] = np.mean(params[:, i])
-                sig[0, i] = np.std(params[:, i])
-        
+                        else:
+                            mu[0, j] += hf[group].attrs[param_key]
+                            sig[0, j] += hf[group].attrs[param_key] ** 2.
+                            n[0, j] += 1
+                        # params[i, j] = hf[group].attrs[param_key]
+
+            # for i in range(self.n_params):
+            #     mu[0, i] = np.mean(params[:, i])
+            #     sig[0, i] = np.std(params[:, i])
+
+            mu = mu / n
+            sig = np.sqrt((sig/n) - mu**2.)  # sqrt(E(X^2) - E(X)^2)
+            
             self.norms = {'mu': mu,
                           'sig': sig}
                     
@@ -271,15 +287,24 @@ class Data:
                 # Temporaray work arrays
                 _x = np.array(hf[group+'/'+ds],
                               dtype=np.float32).reshape((ns, *self.dim))
-                _y = np.array([hf[group].attrs[param_key]
-                               for param_key in self.param_keys],
-                              dtype=np.float32).reshape((1, self.n_params))
-                # These groups share output params
-                _y = np.tile(_y, ns).reshape((ns, self.n_params))
-
                 # Store
                 x[i0:i1, :, :, :] = _x
-                y[i0:i1, :] = _y
+
+                # Are we working with global or local (slice-wise)
+                # parameters?
+                for j, param_key in enumerate(self.param_keys):
+                    if 'slc' in param_key:
+                        # We have an array of parameters stored as a dset
+                        _y = np.array(hf[group+'/'+param_key],
+                                      dtype=np.float32)
+                    else: 
+                        # These groups share output params stored as attrs
+                        _y = float(hf[group].attrs[param_key])
+                        _y = np.tile(_y, ns)
+
+                    # Store               
+                    y[i0:i1, j] = _y[:]
+                    
 
         # Normalise parameters
         print_level('normalising parameters',
