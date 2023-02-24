@@ -251,7 +251,7 @@ class Data:
         return shuffle_idxs[ds]
 
 
-    def load_data(self, ds, shuffle=False):
+    def load_data(self, ds, shuffle=False, ret_z=False):
         """Load all the data for a given dataset, returns input and
         output numpy arrays
 
@@ -264,6 +264,10 @@ class Data:
             Whether to randomly shuffle the input and
             output data
 
+        ret_z : bool
+            Whether to return the redshifts of the
+            slices
+
         """
 
         print_level(f'loading {ds:s} data',
@@ -275,6 +279,9 @@ class Data:
         # print(nt, ns)
         x = np.zeros((nt, *self.dim), dtype=np.float32)      # input
         y = np.zeros((nt, self.n_params), dtype=np.float32)  # output
+
+        if ret_z:
+            z = np.zeros(nt, dtype=np.float32)         # redshifts
 
         with h5py.File(self.config['data_path'], 'r') as hf:
             # Iterate over all the groups being used for this ds
@@ -301,9 +308,15 @@ class Data:
                         # These groups share output params stored as attrs
                         _y = float(hf[group].attrs[param_key])
                         _y = np.tile(_y, ns)
-
+                    
                     # Store               
                     y[i0:i1, j] = _y[:]
+
+                if ret_z:
+                    _z = float(hf[group].attrs['z'])
+                    _z = np.tile(_z, ns)
+                    z[i0:i1] = _z
+                    
                     
 
         # Normalise parameters
@@ -321,6 +334,11 @@ class Data:
             x = x[shuffle_idxs, :, :, :]
             y = y[shuffle_idxs, :]
 
+        if ret_z:
+            if shuffle:
+                z = z[shuffle_idxs]
+            return x, y, z
+                
         return x, y
 
     def normalise_parameters(self, y):
