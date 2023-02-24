@@ -20,18 +20,22 @@ class Data:
         # groups = self.groups
         # self.n_groups = {ds: n_groups for ds in self.datasets}
         # self.groups = {ds: groups for ds in self.datasets}
-        
+
         if self.max_n_box > 0:
             # Randomly shuffle all of the old boxes
             gidxs = np.random.choice(self.n_groups['train'],
                                      self.max_n_box,
                                      replace=False)
             assert(self.max_n_box == gidxs.shape[0]), 'More samples than allowed'
+
+            # Typically the amount of validation data is very small,
+            # so I haven't bothered to cut it down here
             self.n_groups['train'] = self.max_n_box
-            self.n_groups['valid'] = self.max_n_box
+            # self.n_groups['valid'] = self.max_n_box
+            
             # Sample the new n_groups number of boxes from the shuffled data
             self.groups['train'] = self.groups['train'][gidxs]
-            self.groups['valid'] = self.groups['valid'][gidxs]
+            # self.groups['valid'] = self.groups['valid'][gidxs]
 
 
     def load_config(self):
@@ -51,6 +55,15 @@ class Data:
             self.generator = bool(self.config['generator'])
             self.load_norms = bool(self.config['load_norms'])
 
+            # Try trimming the lightcone
+            try:
+                # which redshift sliec to start from (i.e. go from
+                # min_slice:-1 instead of 0:-1)
+                self.min_slice = int(self.config['min_slice'])
+            except KeyError:
+                # might not be set
+                self.min_slice = 0
+            
             assert ((self.max_n_slice < 0) or (self.max_n_box < 0)), 'Cannot use max_n_slice and max_n_box together'
             
             assert(self.config['mode'] in ['test', 'train', 'both'])
@@ -95,6 +108,12 @@ class Data:
                             2,
                             self.verbose)
 
+            if self.min_slice > 0:
+                print_level(f'starting from redshift slice {self.min_slice:d} (this should only be used with lightcones!)',
+                            2,
+                            self.verbose)
+
+
     def get_data_info(self):
         """Reads the properties of the HDF5 data file
         
@@ -113,8 +132,8 @@ class Data:
                 self.n_groups[ds] = len(self.groups[ds])
                 g0 = self.groups[ds][0]
                 self.n_slices[ds] = hf[g0+'/'+ds].shape[0]  # per group
-                self.dim[ds] = (hf[g0+'/'+ds].shape[1],
-                                hf[g0+'/'+ds].shape[2],
+                self.dim[ds] = (hf[g0+'/'+ds].shape[1],            # position
+                                hf[g0+'/'+ds].shape[2]-self.min_slice, # redshift
                                 1)  # dimensions of a single input image
 
                 # FIXME put a better assert here, also should probably
@@ -293,7 +312,15 @@ class Data:
                 
                 # Temporaray work arrays
                 _x = np.array(hf[group+'/'+ds],
-                              dtype=np.float32).reshape((ns, *self.dim))
+                              dtype=np.float32)[:, :, self.min_slice:]
+                _x = _x.reshape((ns, *self.dim))
+
+                # Do we subtract the mean?
+                subtract_global_dTb = False
+                if subtract_global_dTb:
+                    print_level('subtracting global T_b', 2, self.verbose)
+                    _x = _x - hf[group].attrs['global_dTb']
+                
                 # Store
                 x[i0:i1, :, :, :] = _x
 
