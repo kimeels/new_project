@@ -63,7 +63,23 @@ class Data:
             except KeyError:
                 # might not be set
                 self.min_slice = 0
+
+            # If the minimum slice is set out of bounds, just set it
+            # to zero
+            if self.min_slice < 0: self.min_slice = 0
             
+            try:
+                # which redshift slice to go up to, we want to include
+                # this final slice, so add one
+                self.max_slice = int(self.config['max_slice']) + 1
+            except KeyError:
+                # might not be set
+                self.max_slice = None
+
+            # Create a slice from the min/max
+            self.s = slice(self.min_slice, self.max_slice, 1)
+            
+
             assert ((self.max_n_slice < 0) or (self.max_n_box < 0)), 'Cannot use max_n_slice and max_n_box together'
             
             assert(self.config['mode'] in ['test', 'train', 'both'])
@@ -113,6 +129,11 @@ class Data:
                             2,
                             self.verbose)
 
+            if self.max_slice is not None:
+                print_level(f'extending to redshift slice {self.max_slice:d} (this should only be used with lightcones!)',
+                            2,
+                            self.verbose)
+
 
     def get_data_info(self):
         """Reads the properties of the HDF5 data file
@@ -132,8 +153,16 @@ class Data:
                 self.n_groups[ds] = len(self.groups[ds])
                 g0 = self.groups[ds][0]
                 self.n_slices[ds] = hf[g0+'/'+ds].shape[0]  # per group
+
+                # Compute the dimensions in z
+                if self.max_slice is None:
+                    dim_z = hf[g0+'/'+ds].shape[2]-self.min_slice
+                else:
+                    dim_z = self.max_slice - self.min_slice
+                    
+                hf[g0+'/'+ds].shape[2]-self.min_slice, # redshift
                 self.dim[ds] = (hf[g0+'/'+ds].shape[1],            # position
-                                hf[g0+'/'+ds].shape[2]-self.min_slice, # redshift
+                                dim_z,
                                 1)  # dimensions of a single input image
 
                 # FIXME put a better assert here, also should probably
@@ -312,7 +341,7 @@ class Data:
                 
                 # Temporaray work arrays
                 _x = np.array(hf[group+'/'+ds],
-                              dtype=np.float32)[:, :, self.min_slice:]
+                              dtype=np.float32)[:, :, self.s]
                 _x = _x.reshape((ns, *self.dim))
 
                 # Do we subtract the mean?
