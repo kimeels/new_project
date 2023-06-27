@@ -398,7 +398,9 @@ class Data:
         return x, y
 
     def normalise_parameters(self, y):
-        """Normalise the output parameter array y, using the precomputed mean and standard deviation as y_norm = (y - mu) / sig
+        """Normalise the output parameter array y, using the
+        precomputed mean and standard deviation as y_norm = (y - mu) /
+        sig
 
         Parameters
         ----------
@@ -456,12 +458,12 @@ class DataGenerator(Sequence):
         """Returns the number of batches per epoch
 
         """
-        return int(self.n_slices_tot // self.D.batch_size)
+        return int(self.D.n_groups[self.ds] // self.D.batch_size)
 
     def __getitem__(self, i):
         i0 = i * self.D.batch_size
         i1 = (i + 1) * self.D.batch_size
-        idxs_batch = self.idxs[i0:i1, :]
+        idxs_batch = self.idxs[i0:i1]
 
         x, y = self.load_data(idxs_batch)
 
@@ -472,34 +474,36 @@ class DataGenerator(Sequence):
         position of every slice
 
         """
-        self.n_slices_tot = self.D.n_slices[self.ds] * self.D.n_groups[self.ds]
-        self.idxs = np.zeros(shape=(self.n_slices_tot, 2), dtype=int)  # int32 to save space?
-        slice_idxs = np.arange(0, self.D.n_slices[self.ds], dtype=int)
+        # We split up the input datasets by group, not by slice (so a
+        # whole lightcone is shown to the network at a time)
+        self.idxs = np.arange(self.D.n_groups[self.ds],
+                              dtype=int)
 
-        for i, g in enumerate(self.D.groups[self.ds]):
-            i0 = i * self.D.n_slices[self.ds]  
-            i1 = (i + 1) * self.D.n_slices[self.ds]
-
-            self.idxs[i0:i1, 0] = int(g)      # group index
-            self.idxs[i0:i1, 1] = slice_idxs  # slice index
 
     def load_data(self, idxs_batch):
-        d = '{0:05d}/'
-        x = np.zeros((self.D.batch_size, *self.D.dim),
+        # d = '{0:05d}/'
+        x = np.zeros((self.D.batch_size * self.D.n_slices[self.ds],
+                      *self.D.dim),
                      dtype=np.float32)
-        y = np.zeros((self.D.batch_size, self.D.n_params),
+        y = np.zeros((self.D.batch_size * self.D.n_slices[self.ds],
+                      self.D.n_params),
                      dtype=np.float32)
 
         with h5py.File(self.D.config['data_path'], 'r') as hf:
             # Iterate over the group and slice in the idxs for this batch
-            for i, (g, s) in enumerate(zip(idxs_batch[:, 0],
-                                           idxs_batch[:, 1])):
-                x[i, :, :, 0] = np.array(hf[d.format(g)+self.ds])[s, :, :]
-                y[i, :] = np.array([hf[d.format(g)].attrs[param_key]
-                                    for param_key
-                                    in self.D.param_keys],
-                                   dtype=np.float32).reshape((1, self.D.n_params))
-
+            for i, idx in enumerate(idxs_batch):
+                # Extract the group from Data which corresponds to
+                # this idx
+                i0 = i * self.D.n_slices[self.ds]
+                i1 = (i + 1) * self.D.n_slices[self.ds]
+                x[i0:i1, :, :, 0] = np.array(hf[self.D.groups[self.ds][idx] +
+                                            '/' + self.ds])[:, :, :]
+                y[i0:i1, :] = np.tile(np.array([hf[self.D.groups[self.ds][idx]].attrs[param_key]
+                                                for param_key in self.D.param_keys],
+                                               dtype=np.float32),
+                                      self.D.n_slices[self.ds]).reshape((self.D.n_slices[self.ds],
+                                                                         self.D.n_params))
+                
         # Normalise parameters
         y = self.D.normalise_parameters(y)
 
