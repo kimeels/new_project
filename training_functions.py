@@ -63,7 +63,7 @@ def make_model(final_layer = 6):
 
 
     model.compile(loss='mean_squared_error',
-              optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+              optimizer=tf.keras.optimizers.Adam(learning_rate=0.01),
               metrics=[tf.keras.metrics.RootMeanSquaredError()])
     return model
 
